@@ -6,18 +6,23 @@
 \usage{
 intensity_pspline(
   X,
+  ...,
   formula = ~1,
-  delta = NULL,
-  h = NULL,
-  r = 1,
+  delta = "0",
+  h = "0.5",
+  r = 2,
   scale = NULL,
-  density = FALSE
+  density = FALSE,
+  verbose = FALSE,
+  control = list()
 )
 }
 \arguments{
 \item{X}{A point pattern on a geometric network (object of class
 \code{gnpp}). The data (\code{X$data}) must contain information on
 all covariates included in \code{formula}.}
+
+\item{...}{Other arguments. The following arguments must match exactly.}
 
 \item{formula}{A one-sided formula (if a two-sided formula is supplied, the
 left hand side of the formula is ignored). The formula can consist of either
@@ -27,8 +32,7 @@ smooth terms constructed with \code{\link[mgcv]{s}} and the argument
 \code{bs} is set to
 \code{bs = "ps"} by default, i.e. \code{intensity_pspline} can handle
 penalized spline
-based smooth terms. Internal linear covariates must be supplied via
-\code{internal()}, see examples for details.}
+based smooth terms.}
 
 \item{delta}{The global knot distance \eqn{\delta}, a numerical vector of length one. If
 not supplied, delta will be chosen properly according to the geometric
@@ -39,7 +43,7 @@ not supplied, \code{h} will be chosen properly according to the geometric
 network \code{X} which is supplied.}
 
 \item{r}{The order of the penalty of the baseline intensity on the geometric
-network, default to a penalty of order \code{r = 1}.}
+network, default to a penalty of order \code{r = 2}.}
 
 \item{scale}{A named list which specifies the rescaling of network related
 covariates. Currently, only x- and y-coordinates can be scaled.}
@@ -47,6 +51,12 @@ covariates. Currently, only x- and y-coordinates can be scaled.}
 \item{density}{\code{TRUE} if the intensity should be normalized such that it
 can be interpreted as a density, i.e. the integral over the estimated density
 is equal to one.}
+
+\item{verbose}{If \code{TRUE}, prints information on the process of the fitting
+algorithm.}
+
+\item{control}{A list of optional arguments which control the convergence
+of the fitting algorithm. See "Details".}
 }
 \value{
 A fitted geometric network (object of class \code{gnppfit}).
@@ -68,9 +78,7 @@ with the same syntax as in \code{\link[mgcv]{gam}}.
 library(geonet)
 X <- runifgn(50, small_gn)
 delta <- 0.2
-h <- 0.1
-r <- 2
-model <- intensity_pspline(X, delta = delta, h = h, r = r)
+model <- intensity_pspline(X, delta = delta)
 summary(model)
 plot(model)
 }

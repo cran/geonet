@@ -15,6 +15,7 @@
 #' @param X A point pattern on a geometric network (object of class
 #' \code{gnpp}). The data (\code{X$data}) must contain information on
 #' all covariates included in \code{formula}.
+#' @param ... Other arguments. The following arguments must match exactly.
 #' @param formula A one-sided formula (if a two-sided formula is supplied, the
 #' left hand side of the formula is ignored). The formula can consist of either
 #' linear terms as in linear models (\code{\link{lm}}) or smooth terms as
@@ -23,8 +24,7 @@
 #' \code{bs} is set to
 #' \code{bs = "ps"} by default, i.e. \code{intensity_pspline} can handle
 #' penalized spline
-#' based smooth terms. Internal linear covariates must be supplied via
-#' \code{internal()}, see examples for details.
+#' based smooth terms.
 #' @param delta The global knot distance \eqn{\delta}, a numerical vector of length one. If
 #' not supplied, delta will be chosen properly according to the geometric
 #' network \code{X} which is supplied.
@@ -32,16 +32,20 @@
 #' not supplied, \code{h} will be chosen properly according to the geometric
 #' network \code{X} which is supplied.
 #' @param r The order of the penalty of the baseline intensity on the geometric
-#' network, default to a penalty of order \code{r = 1}.
+#' network, default to a penalty of order \code{r = 2}.
 #' @param scale A named list which specifies the rescaling of network related
 #' covariates. Currently, only x- and y-coordinates can be scaled.
 #' @param density \code{TRUE} if the intensity should be normalized such that it
 #' can be interpreted as a density, i.e. the integral over the estimated density
 #' is equal to one.
+#' @param verbose If \code{TRUE}, prints information on the process of the fitting
+#' algorithm.
+#' @param control A list of optional arguments which control the convergence
+#' of the fitting algorithm. See "Details".
 #' @return A fitted geometric network (object of class \code{gnppfit}).
 #' @references Schneble, M. and G. Kauermann (2020). Intensity estimation on
 #' geometric networks with penalized splines. arXiv preprint arXiv:2002.10270 .
-#' @importFrom  Matrix Matrix bdiag
+#' @importFrom Matrix Matrix bdiag
 #' @importFrom stats update as.formula model.matrix setNames
 #' @importFrom utils tail
 #' @importFrom mgcv smooth.construct.ps.smooth.spec s
@@ -51,36 +55,53 @@
 #' library(geonet)
 #' X <- runifgn(50, small_gn)
 #' delta <- 0.2
-#' h <- 0.1
-#' r <- 2
-#' model <- intensity_pspline(X, delta = delta, h = h, r = r)
+#' model <- intensity_pspline(X, delta = delta)
 #' summary(model)
 #' plot(model)
 
-intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
-                             scale = NULL, density = FALSE){
+intensity_pspline <- function(X, ..., formula = ~1, delta = "0", h = "0.5", r = 2,
+                              scale = NULL, density = FALSE, verbose = FALSE,
+                              control = list()){
+
+  if (density) stop("Computing the density is currently not supported.")
+
   # remove response from formula if supplied
   formula <- update(formula, NULL ~ .)
 
   # get linear and smooth terms
   vars <- all.vars(formula)
   if (length(vars) == 0){
-    lins <- NULL
-    smooths <- "G"
-    intern <- NULL
+    vars_lins <- NULL
+    vars_smooths <- "G"
+    vars_internal <- NULL
+    ind_smooths <- NULL
   } else {
     vars2 <- tail(strsplit(as.character(formula), " \\+ "),1)[[1]]
-    lins <- vars[which(substring(vars2, 1, 2) != "s(")]
-    smooths <- c("G", vars[which(substring(vars2, 1, 2) == "s(")])
-    intern <- which(substring(vars2, 1, 9) == "internal(")
+    if (length(setdiff(vars, c("x", "y", "dist2V",
+                               names(summary(X)$covariates$internal),
+                               names(summary(X)$covariates$external)))) > 0) {
+      stop("At least one covariate was not found in the data!")
+    }
+    formula_string <- tail(strsplit(as.character(formula), " \\+ "),1)[[1]]
+    vars_internal <- intersect(vars, c("x", "y", "dist2V",
+                                       names(summary(X)$covariates$internal)))
+    vars_lins <- vars[which(substring(formula_string, 1, 2) != "s(")]
+    ind_smooths <- which(substring(formula_string, 1, 2) == "s(")
+    vars_smooths <- c("G", vars[ind_smooths])
+    if (length(intersect(vars_internal, vars_smooths)) > 0) {
+      stop("Internal covariates can only be included as linear terms!")
+    }
   }
 
   # get representation of P-splines on the network
-  knots <- network_knots(X$network, delta)
-  bins <- network_bins(X$network, h)
-  #P <- list(splines = knots, bins = bins)
-  data <- bin_data(X, bins, vars, intern, scale = scale)
-  ind <- setNames(vector("list", length(smooths) + 1), c(smooths, "lins"))
+  setup <- delta_h_global(X$network, delta, h)
+  knots <- network_knots(X$network, setup$delta)
+  bins <- network_bins(X$network, setup$h)
+
+  data <- bin_data(X, bins = bins, vars = vars, vars_internal = vars_internal,
+                   scale = scale)
+  ind <- setNames(vector("list", length(vars_smooths) + 1),
+                  c(vars_smooths, "lins"))
 
   # design matrix of for network splines
   B <- bspline_design(X$network, knots, bins)
@@ -88,30 +109,33 @@ intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
   ind$G <- setNames(1:ncol(Z), paste0("G.", 1:ncol(Z)))
   K <- network_penalty(X$network, knots, r)
 
-  smooth_terms <- setNames(vector("list", length(smooths) - 1), smooths[-1])
+  smooth_terms <- setNames(vector("list", length(vars_smooths) - 1),
+                           vars_smooths[-1])
   # design for smooth terms
-  if (length(smooths) > 1) {
-    for (i in 2:length(smooths)) {
-      sm <- smooth.construct.ps.smooth.spec(eval(parse(text = vars2[i - 1])),
+  if (length(ind_smooths) > 0) {
+    for (i in 1:length(ind_smooths)) {
+      sm <- smooth.construct.ps.smooth.spec(
+        eval(parse(text = formula_string[ind_smooths][i])),
                                             data = data, knots = NULL)
       D <- sm$D[, -1]
       K <- bdiag(K, t(D)%*%D)
       Z_smooth <- sm$X
-      smooth_terms[[smooths[i]]]$range <- range(data[[smooths[i]]])
-      smooth_terms[[smooths[i]]]$knots <- sm$knots
-      smooth_terms[[smooths[i]]]$l <- sm$m[1] + 1
-      smooth_terms[[smooths[i]]]$r <- sm$m[2]
-      smooth_terms[[smooths[i]]]$ident <- colMeans(Z_smooth)
-      Z <- cbind(Z, sweep(Z_smooth, 2, smooth_terms[[smooths[i]]]$ident)[, -1])
-      ind[[smooths[i]]] <- setNames((ncol(Z) - ncol(Z_smooth) + 2):ncol(Z),
-                                    paste0(smooths[i], ".", 1:(ncol(Z_smooth) - 1)))
+      var_name <- vars[ind_smooths][i]
+      smooth_terms[[var_name]]$range <- range(data[[var_name]])
+      smooth_terms[[var_name]]$knots <- sm$knots
+      smooth_terms[[var_name]]$l <- sm$m[1] + 1
+      smooth_terms[[var_name]]$r <- sm$m[2]
+      smooth_terms[[var_name]]$ident <- colMeans(Z_smooth)
+      Z <- cbind(Z, sweep(Z_smooth, 2, smooth_terms[[var_name]]$ident)[, -1])
+      ind[[var_name]] <- setNames((ncol(Z) - ncol(Z_smooth) + 2):ncol(Z),
+                                    paste0(var_name, ".", 1:(ncol(Z_smooth) - 1)))
     }
   }
 
   # design for linear terms
-  if (length(lins) > 0){
-    formula_lins <- as.formula(paste("~", paste(lins, collapse = " + ")))
-    model_matrix_lins <- model.matrix(formula_lins, data = data)[, -1]
+  if (length(vars_lins) > 0){
+    formula_lins <- as.formula(paste("~", paste(vars_lins, collapse = " + ")))
+    model_matrix_lins <- as.matrix(model.matrix(formula_lins, data = data)[, -1])
     ind[["lins"]] <- setNames((ncol(Z) + 1):(ncol(Z) + ncol(model_matrix_lins)),
                               colnames(model_matrix_lins))
     Z <- cbind(Z, model_matrix_lins)
@@ -119,7 +143,9 @@ intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
   }
 
   # fit the model
-  fit <- fit_poisson_model(data, Z, K, ind)
+  if (verbose) cat("Finished preprocessing. Start fitting the model.\n")
+  fit <- fit_poisson_model(data, Z, K, ind, verbose = verbose,
+                           control = control)
 
   # output
   out <- list()
@@ -127,6 +153,7 @@ intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
   out$V <- fit$V
   #out$effects <- effects
   #out$P <- P
+  out$setup <- setup
   out$knots <- knots
   out$bins <- bins
   out$smooth <- smooth_terms
@@ -135,6 +162,7 @@ intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
   out$network <- X$network
   out$formula <- formula
   out$it_rho <- fit$it_rho
+  out$edf <- fit$edf
   class(out) <- "gnppfit"
   out
 }
@@ -155,13 +183,10 @@ intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
 #' \code{theta}.
 #' @param ind A list which contains the indices belonging to each smooth term
 #' and the linear terms.
-#' @param rho An initial estimate of the smoothing parameter. Either a vector
-#' of length one or a vector which corresponds to the count of smooth terms
-#' (including the baseline intensity) in the model.
-#' @param rho_max If \code{rho} exceeds \code{rho_max}, the algorithm stops
-#' and returns the current values.
-#' @param eps_rho The termination condition for \code{rho}.
-#' @param maxit_rho Maximum number of iterations for \code{rho}.
+#' @param verbose If \code{TRUE}, prints information on the process of the fitting
+#' algorithm.
+#' @param control A list of optional arguments which control the convergence
+#' of the fitting algorithm. See "Details".
 #' @return Model fit.
 #' @references Wood, S. N. and Fasiolo, M. (2017). A generalized Fellner-Schall
 #'  method for smoothing parameter optimization with application to
@@ -171,38 +196,106 @@ intensity_pspline <- function(X, formula = ~1, delta = NULL, h = NULL, r = 1,
 #' @author Marc Schneble \email{marc.schneble@@stat.uni-muenchen.de}
 #' @export
 
-fit_poisson_model <- function(data, Z, K, ind, rho = 10, rho_max = 1e5,
-                     eps_rho = 0.01, maxit_rho = 100){
+fit_poisson_model <- function(data, Z, K, ind, verbose = FALSE,
+                              control = list()){
 
   # determine optimal smoothing parameter rho with Fellner-Schall method
-  rho <- rep(rho, length(ind) - 1)
-  Delta_rho <- Inf
-  it_rho <- 0
+  rho <- rep(ifelse(!is.null(control$rho_start), control$rho_start, 10),
+             length(ind) - 1)
+  rho_max <- ifelse(!is.null(control$rho_max), control$rho_max, 1e5)
+  it_max <- ifelse(!is.null(control$it_max), control$it_max, 100)
+  eps_theta <- ifelse(!is.null(control$eps_theta), control$eps_theta, 1e-3)
+
+  Delta_theta <- Inf
+  it <- 0
   theta <- rep(0, ncol(Z))
-  while(Delta_rho > eps_rho){
-    it_rho <- it_rho + 1
-    theta <- scoring(theta, rho, data, Z, K, ind)
+  duration <- NULL
+  while(tail(Delta_theta, 1) > eps_theta){
+    if (verbose) start <- Sys.time()
+    it <- it + 1
+    if (it == 1) {
+      theta_new <- scoring(theta, rho, data, Z, K, ind)
+    } else {
+      theta_new <-
+        as.vector(theta + Matrix::solve(fisher(theta, rho, data, Z, K, ind))%*%
+                    score(theta, rho, data, Z, K, ind))
 
-    V <- Matrix::solve(fisher(theta, rho, data, Z, K, ind))
+    }
+    V <- Matrix::solve(fisher(theta_new, rho, data, Z, K, ind))
 
-    # updatae rho
+    # update rho
     rho_new <- rep(NA, length(ind) - 1)
     for (i in 1:(length(ind) - 1)) {
       rho_new[i] <- as.vector(rho[i]*(Matrix::rankMatrix(K[ind[[i]], ind[[i]]], method = "qr.R")[1]/rho[i] -
                                         sum(Matrix::diag(V[ind[[i]], ind[[i]]]%*%K[ind[[i]], ind[[i]]])))/
-                                (Matrix::t(theta[ind[[i]]])%*%K[ind[[i]], ind[[i]]]%*%theta[ind[[i]]]))
+                                (Matrix::t(theta_new[ind[[i]]])%*%K[ind[[i]], ind[[i]]]%*%theta_new[ind[[i]]]))
     }
 
-    if (any(rho_new > rho_max)) break
+    if (any(rho_new > rho_max)) {
+      warning("Stopped estimation of rho because maximum rho has been reached!")
+      break
+    }
     if (any(rho_new < 0)){
       warning("rho = 0 has occurred")
     }
-    if (it_rho > maxit_rho){
+    if (it > it_max){
       warning("Stopped estimation of rho because maximum number of iterations has been reached!")
       break
     }
-    Delta_rho <- sqrt(sum((rho_new - rho)^2))/sqrt(sum((rho)^2))
+    Delta_theta <- c(Delta_theta, sqrt(sum((theta_new - theta)^2))/sqrt(sum((theta)^2)))
+    if (verbose & it >= 5) {
+      duration <- c(duration, as.vector(difftime(Sys.time(), start, units = "mins")))
+      Delta_theta_recent <- tail(Delta_theta, 4)
+      mean_reduction <- mean((abs(Delta_theta_recent[-1] -
+                                    Delta_theta_recent[-4])/
+                                Delta_theta_recent[-4]))
+      k <- ceiling(log(eps_theta/tail(Delta_theta, 1))/log(1 - mean_reduction))
+      cat(paste("Expected number of further iterations:", k,
+                "(expected duration:", round(mean(tail(duration, 4))*k, 2), "minutes)", "\n"))
+    }
     rho <- rho_new
+    theta <- theta_new
   }
-  list(theta = theta, V = V, rho = rho, it_rho = it_rho)
+  # degrees of freedom
+  mu <- exp(as.vector(Z%*%theta) + log(data$h) + log(data$offset))
+  Mu <- Matrix::Matrix(0, nrow(Z), nrow(Z))
+  diag(Mu) <- mu
+  H <- Matrix::solve(fisher(theta, rho, data, Z, K, ind))%*%(Matrix::t(Z)%*%Mu%*%Z)
+  edf <- Matrix::diag(H)
+
+  list(theta = theta, V = V, rho = rho, it_rho = it, edf = edf)
+}
+
+
+
+#' Intensity Estimation on Geometric Networks based on Kernel Smoothing
+#'
+#' @param X A point pattern on a geometric network (object of class
+#' \code{gnpp}).
+#' @param kernel If \code{kernel = "heat"}, a heat kernel is used. If
+#' \code{kernel = "Euclidean"}, a two-dimensional kernel smoother is used.
+#'
+#' @return A fitted point process on a linear network, an object of class
+#' \code{lppfit}.
+#' @import spatstat.linnet
+#' @import spatstat.core
+#' @export
+#' @examples
+#' X <- runifgn(n = 50, G = small_gn)
+#' fit <- intensity_kernel(X)
+#' plot(fit)
+
+intensity_kernel <- function(X, kernel = "heat") {
+  Y <- as_lpp(X)
+  if (kernel == "heat") {
+    sigma <- bw.lppl(Y, distance = "path")
+    fit <- density.lpp(Y, sigma = as.numeric(sigma))
+  }
+  if (kernel == "Euclidean") {
+    sigma <- bw.scott.iso(Y)
+    fit <- density.lpp(Y, sigma = sigma, distance = "euclidean")
+  }
+  fit$network <- X$network
+  class(fit) <- c("lppfit", class(fit))
+  fit
 }

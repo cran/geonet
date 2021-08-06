@@ -4,16 +4,7 @@
 \alias{fit_poisson_model}
 \title{Fit a Penalized Spline Poisson Model on a Geometric Network}
 \usage{
-fit_poisson_model(
-  data,
-  Z,
-  K,
-  ind,
-  rho = 10,
-  rho_max = 1e+05,
-  eps_rho = 0.01,
-  maxit_rho = 100
-)
+fit_poisson_model(data, Z, K, ind, verbose = FALSE, control = list())
 }
 \arguments{
 \item{data}{The binned data.}
@@ -27,16 +18,11 @@ correspond to the length of the vector of model coefficients \code{theta}.}
 \item{ind}{A list which contains the indices belonging to each smooth term
 and the linear terms.}
 
-\item{rho}{An initial estimate of the smoothing parameter. Either a vector
-of length one or a vector which corresponds to the count of smooth terms
-(including the baseline intensity) in the model.}
+\item{verbose}{If \code{TRUE}, prints information on the process of the fitting
+algorithm.}
 
-\item{rho_max}{If \code{rho} exceeds \code{rho_max}, the algorithm stops
-and returns the current values.}
-
-\item{eps_rho}{The termination condition for \code{rho}.}
-
-\item{maxit_rho}{Maximum number of iterations for \code{rho}.}
+\item{control}{A list of optional arguments which control the convergence
+of the fitting algorithm. See "Details".}
 }
 \value{
 Model fit.
