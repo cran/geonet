@@ -30,7 +30,6 @@
 #' @return The maximum likelihood estimate for fixed smoothing parameters.
 #' @references Fahrmeir, L., Kneib, T., Lang, S. and Marx, B. (2013).
 #' Regression. Springer.
-#' @export
 
 scoring <- function(theta, rho, data, Z, K, ind, eps_theta = 1e-5){
   # perform iterative least squares estimation for a Poisson model with offset
@@ -48,21 +47,15 @@ scoring <- function(theta, rho, data, Z, K, ind, eps_theta = 1e-5){
 }
 
 #' @rdname scoring
-#' @export
 
 score <- function(theta, rho, data, Z, K, ind){
   mu <- exp(as.vector(Z%*%theta) + log(data$h) + log(data$offset))
   score <- as.vector(Matrix::colSums((data$count - mu)*Z)) -
     rep(c(rho, 0), lengths(ind))*K%*%theta
-  # for (a in 1:length(K)) {
-  #   score[ind_smooths[[a]]] <-
-  #     score[ind_smooths[[a]]] - rho[a]*K[[a]]%*%theta[ind_smooths[[a]]]
-  # }
   score
 }
 
 #' @rdname scoring
-#' @export
 
 fisher <- function(theta, rho, data, Z, K, ind){
   mu <- exp(as.vector(Z%*%theta) + log(data$h) + log(data$offset))
@@ -70,9 +63,5 @@ fisher <- function(theta, rho, data, Z, K, ind){
   diag(Mu) <- mu
   fisher <- Matrix::t(Z)%*%Mu%*%Z +
     rep(c(rho, 0), lengths(ind))*K
-  # for (a in 1:length(K)) {
-  #   fisher[ind_smooths[[a]], ind_smooths[[a]]] <-
-  #     fisher[ind_smooths[[a]], ind_smooths[[a]]] + rho[a]*K[[a]]
-  # }
   fisher
 }

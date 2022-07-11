@@ -53,7 +53,7 @@ print.gnpp <- function(x, ...){
 
 print.gnppfit <- function(x, ...){
   stopifnot(inherits(x, "gnppfit"))
-  cat(paste0("Fitted point prozess on a geometric network in ",
+  cat(paste0("Fitted point process on a geometric network in ",
              x$network$q, " dimensions.\n",
              "Network has ", x$network$W, " vertices and ",
              x$network$M, " curve segments.\n"))
@@ -75,7 +75,7 @@ print.summary.gn <- function(x, ...) {
   cat(paste("Geometric network in", x$q, "dimensions with",
             x$W, "vertices\nand", x$M, "curve segments.\n"))
   cat(paste("The linear representation of the network has", x$W_lins, "vertices\nand",
-            x$M_lins, "straigt line segments.\n"))
+            x$M_lins, "straight line segments.\n"))
   cat(paste("Total length of the network:", round(x$total_length, 3),
             x$unit$plural, "\n"))
   cat(paste("Minimum segment length:", round(x$range_length[1], 3),
@@ -130,6 +130,7 @@ print.summary.gnpp <- function(x, ...) {
 #' @export
 
 print.summary.gnppfit <- function(x, ...){
+  stopifnot(inherits(x, "summary.gnppfit"))
   cat(paste("Intensity estimation on a geometric network in", x$q, "dimensions\nwith",
             x$W, "vertices and", x$M, "curve segments.\n"))
   cat("Log-linear Poisson model fitted with maximum likelihood.\n")
@@ -138,7 +139,7 @@ print.summary.gnppfit <- function(x, ...){
   cat("\nFormula: ")
   print(x$formula, showEnv = FALSE)
   if (!is.null(x$tab)) {
-    cat("\nPparametric coefficients:\n")
+    cat("\nParametric coefficients:\n")
     printCoefmat(x$tab[, c(1:2, 6:7)], #digits = digits, signif.stars = signif.stars,
                  na.print = "NA", ...)
   } else {

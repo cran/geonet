@@ -30,6 +30,7 @@
 
 delta_h_global <- function(G, delta = NULL, h = NULL) {
   #global knot distance
+  stopifnot(inherits(G, "gn"))
   if (is.null(delta)) {
     delta <- min(G$d)/2
   } else if (is.character(delta) & !is.na(as.numeric(delta))) {
@@ -83,7 +84,6 @@ delta_h_global <- function(G, delta = NULL, h = NULL) {
 #' @return A list which contains the knot sequence of every curve of the
 #' geometric network.
 #' @author Marc Schneble \email{marc.schneble@@stat.uni-muenchen.de}
-#' @export
 
 network_knots <- function(G, delta){
   if (inherits(G, "gnpp")) G <- as_gn(G)
@@ -118,7 +118,6 @@ network_knots <- function(G, delta){
 #' @return A list which contains the bins of every curve of the geometric
 #' network.
 #' @author Marc Schneble \email{marc.schneble@@stat.uni-muenchen.de}
-#' @export
 
 network_bins <- function(G, h = NULL){
   if (inherits(G, "gnpp")) G <- as_gn(G)
@@ -161,7 +160,6 @@ network_bins <- function(G, h = NULL){
 #' @import dplyr
 #' @importFrom stats setNames
 #' @author Marc Schneble \email{marc.schneble@@stat.uni-muenchen.de}
-#' @export
 
 bin_data <- function(X, bins = NULL, vars = NULL, vars_internal = NULL,
                      scale = NULL){
@@ -237,7 +235,6 @@ bin_data <- function(X, bins = NULL, vars = NULL, vars_internal = NULL,
 #' geometric network (\code{sum(bins$N)}) and the number of columns equal to
 #' the length of \code{vars}.
 #' @author Marc Schneble \email{marc.schneble@@stat.uni-muenchen.de}
-#' @export
 
 internal <- function(vars, X, bins, scale){
   e <- NULL
@@ -290,7 +287,7 @@ internal <- function(vars, X, bins, scale){
   if (length(X_internal) > 0) {
     for (k in 1:length(X_internal)) {
       if (is.element(X_internal[k], vars)) {
-        if (class(X$network$lins[[X_internal[k]]]) == "factor") {
+        if (inherits(X$network$lins[[X_internal[k]]], "factor")) {
           val <- factor(rep(NA, sum(bins$N)),
                         levels = levels(X$network$lins[[X_internal[k]]]))
         } else {
@@ -326,7 +323,6 @@ internal <- function(vars, X, bins, scale){
 #'
 #' @return A numeric vector of length one, indicating the intensity (or the
 #' squared difference of two intensities) at the specified point.
-#' @export
 
 network_intensity <- function(z, m, fit1, fit2 = NULL, scale = NULL){
 
@@ -375,7 +371,6 @@ network_intensity <- function(z, m, fit1, fit2 = NULL, scale = NULL){
 #' @param fit A fitted point process on a geometric network.
 #'
 #' @return A numeric vector of the length one, the integral.
-#' @export
 
 network_integral <- function(fit) {
   int <- rep(NA, fit$network$M)
@@ -416,7 +411,6 @@ network_ISE <- function(fit1, fit2) {
 #' segment.
 #'
 #' @return A list with names l, tp_l, x and y.
-#' @export
 
 network_location <- function(G, m, z){
   e <- NULL
